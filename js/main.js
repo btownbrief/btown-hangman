@@ -2,11 +2,17 @@
 // (pure, tested by scripts/test-engine.mjs); this file owns the DOM:
 // the keyboard, letter slots, the stroke-drawn figure, timer, stats,
 // share, and the monthly leaderboard.
+//
+// One daily run = THREE words on one shared gallows: word 1 "Around
+// Town" (data/deck.json), word 2 "From the Brief" (data/brief-deck.json),
+// word 3 "The Stinger" (data/stinger-deck.json). Six lives total across
+// the whole run; the keyboard resets for each new word, the clock and the
+// chalk guy don't.
 
 import {
-  MAX_WRONG, dayNumber, puzzleForDate, answerLetters, wrongGuesses,
-  livesLeft, isWon, isLost, isGuessable, resultToPoints, pointsToLabel,
-  formatTime,
+  MAX_WRONG, RUN_WORDS, HINT_LOCK_MISSES, dayNumber, puzzlesForDate,
+  answerLetters, wrongGuesses, runWrongTotal, runLivesLeft, isWon, isLost,
+  isGuessable, resultToPoints, pointsToLabel, formatTime,
 } from './engine.js';
 import {
   lbEnabled, getName, submitScore, renamePlayer, fetchTop, monthLabel, playerId,
@@ -40,9 +46,12 @@ const TEST_DATE = new URLSearchParams(location.search).get('testdate');
 const TODAY = TEST_DATE || nyDateStr();
 const DAY_NUM = dayNumber(TODAY);
 
+const STAGE_NAMES = ['Around Town', 'From the Brief', 'The Stinger'];
+
 // ------------------------------------------------------------ state
-let puzzle = null;          // { answer, hint, whyLocal } for TODAY
-let guessed = [];           // letters guessed, in order
+let puzzles = null;         // [{answer,hint,whyLocal}, {…}, {answer,hint}] for TODAY
+let wordIdx = 0;            // which word of the run is in play (0..2)
+let guessedPerWord = [[], [], []]; // letters guessed, per word, in order
 let status = 'playing';     // playing | won | lost
 let started = false;        // first guess made — clock running
 let elapsedMs = 0;
@@ -50,41 +59,52 @@ let endMs = 0;              // frozen clock at game end
 let lastTick = 0;
 let lastDateCheck = 0;
 let dayRolledOver = false;
+let transitioning = false;  // word-to-word hand-off animation in flight
 
-const wrongSoFar = () => (puzzle ? wrongGuesses(puzzle.answer, guessed).length : 0);
-const lives = () => (puzzle ? livesLeft(puzzle.answer, guessed) : MAX_WRONG);
+const answers = () => puzzles.map((p) => p.answer);
+const guessedNow = () => guessedPerWord[wordIdx];
+const totalWrong = () => (puzzles ? runWrongTotal(answers(), guessedPerWord) : 0);
+const lives = () => (puzzles ? runLivesLeft(answers(), guessedPerWord) : MAX_WRONG);
+const hintUnlocked = () => totalWrong() >= HINT_LOCK_MISSES;
 
 // ------------------------------------------------------------ boot
 async function boot() {
-  $('dayBar').textContent = `#${DAY_NUM} · ${MAX_WRONG} lives · Burlington, VT`;
+  $('dayBar').textContent = `#${DAY_NUM} · ${MAX_WRONG} lives · three words`;
   buildKeyboard();
-  await loadDeck();
+  await loadDecks();
 }
 
-async function loadDeck() {
+async function loadDecks() {
   $('deckErrorOverlay').classList.add('hidden');
   try {
-    const res = await fetch('data/deck.json');
-    if (!res.ok) throw new Error(`Deck request failed: ${res.status}`);
-    const deck = await res.json();
-    puzzle = puzzleForDate(TODAY, deck);
+    const [deck, brief, stinger] = await Promise.all(
+      ['data/deck.json', 'data/brief-deck.json', 'data/stinger-deck.json']
+        .map(async (url) => {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`Deck request failed: ${res.status}`);
+          return res.json();
+        }),
+    );
+    puzzles = puzzlesForDate(TODAY, { deck, brief, stinger });
     restore();
     renderAll();
     if (status !== 'playing') setTimeout(() => showResults(false), 400);
     void retryPendingSubmit();
   } catch {
-    puzzle = null;
+    puzzles = null;
     $('deckErrorOverlay').classList.remove('hidden');
   }
 }
-$('deckRetryBtn').addEventListener('click', () => { void loadDeck(); });
+$('deckRetryBtn').addEventListener('click', () => { void loadDecks(); });
 
 // ------------------------------------------------------------ persistence
-const STATE_KEY = 'bh-state';
+// v2: the three-word run. Old single-word 'bh-state' saves are ignored
+// on purpose (no migration — the schema changed the night before day 1).
+const STATE_KEY = 'bh-state-v2';
 function save() {
   if (TEST_DATE) return;
   localStorage.setItem(STATE_KEY, JSON.stringify({
-    date: TODAY, guessed, status, started, elapsedMs, endMs,
+    date: TODAY, wordIdx, guessedPerWord, status, started, elapsedMs, endMs,
   }));
 }
 function restore() {
@@ -99,14 +119,30 @@ function restore() {
     }
     return;
   }
-  // Trust the save only if it's a plausible letter list for today.
-  const g = Array.isArray(st.guessed) ? st.guessed.filter((ch) => isGuessable(ch)) : [];
-  guessed = [...new Set(g)];
+  // Trust the save only if it's a plausible per-word letter list for today.
+  const lists = Array.isArray(st.guessedPerWord) ? st.guessedPerWord : [];
+  const clean = Array.from({ length: RUN_WORDS }, (_, i) => {
+    const g = Array.isArray(lists[i]) ? lists[i].filter((ch) => isGuessable(ch)) : [];
+    return [...new Set(g)];
+  });
+  const idx = Number.isInteger(st.wordIdx) && st.wordIdx >= 0 && st.wordIdx < RUN_WORDS
+    ? st.wordIdx : 0;
+  // every word before the current one must actually be solved
+  for (let i = 0; i < idx; i++) {
+    if (!isWon(puzzles[i].answer, clean[i])) return;
+  }
+  guessedPerWord = clean;
+  wordIdx = idx;
   started = Boolean(st.started);
   elapsedMs = Number.isFinite(st.elapsedMs) ? st.elapsedMs : 0;
   endMs = Number.isFinite(st.endMs) ? st.endMs : 0;
-  status = st.status === 'won' && isWon(puzzle.answer, guessed) ? 'won'
-    : st.status === 'lost' && isLost(puzzle.answer, guessed) ? 'lost'
+  const wrong = totalWrong();
+  if (wrong < MAX_WRONG) {
+    // a save can land between solving a word and the hand-off animation
+    while (wordIdx < RUN_WORDS - 1 && isWon(puzzles[wordIdx].answer, guessedNow())) wordIdx++;
+  }
+  status = wrong >= MAX_WRONG ? 'lost'
+    : wordIdx === RUN_WORDS - 1 && isWon(puzzles[wordIdx].answer, guessedNow()) ? 'won'
     : 'playing';
 }
 
@@ -144,6 +180,8 @@ function renderTimer() {
 
 // ------------------------------------------------------------ rendering
 function renderAll() {
+  renderChips();
+  renderStage();
   renderHint();
   renderSlots();
   renderKeyboard();
@@ -152,18 +190,45 @@ function renderAll() {
   renderTimer();
 }
 
-function renderHint() {
-  $('hint').innerHTML = '';
-  const b = document.createElement('b');
-  b.textContent = 'Hint: ';
-  $('hint').append(b, puzzle.hint);
+// solved words collapse into small ✓ chips above the board
+function renderChips() {
+  const box = $('chips');
+  box.innerHTML = '';
+  for (let i = 0; i < wordIdx; i++) {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = `✓ ${puzzles[i].answer}`;
+    box.appendChild(chip);
+  }
+  box.classList.toggle('hidden', wordIdx === 0);
 }
 
-function renderSlots() {
+function renderStage() {
+  $('stage').textContent =
+    `Word ${wordIdx + 1} of ${RUN_WORDS} — ${STAGE_NAMES[wordIdx]}`;
+}
+
+function renderHint() {
+  const box = $('hint');
+  box.innerHTML = '';
+  const locked = wordIdx === RUN_WORDS - 1 && !hintUnlocked();
+  box.classList.toggle('locked', locked);
+  if (locked) {
+    box.textContent = `🔒 Hint locked — costs ${HINT_LOCK_MISSES} misses`;
+    return;
+  }
+  const b = document.createElement('b');
+  b.textContent = 'Hint: ';
+  box.append(b, puzzles[wordIdx].hint);
+}
+
+function renderSlots(dealIn = false) {
   const box = $('slots');
   box.innerHTML = '';
-  const g = new Set(guessed);
-  for (const wordStr of puzzle.answer.split(' ')) {
+  const g = new Set(guessedNow());
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let k = 0;
+  for (const wordStr of puzzles[wordIdx].answer.split(' ')) {
     const word = document.createElement('div');
     word.className = 'word';
     for (const ch of wordStr) {
@@ -182,6 +247,11 @@ function renderSlots() {
         slot.className = 'slot';
         span.textContent = ch;         // hidden by the un-flipped transform
         span.setAttribute('aria-hidden', 'true');
+      }
+      if (dealIn && !reduced) {
+        slot.classList.add('deal');
+        slot.style.animationDelay = `${k * 40}ms`;
+        k++;
       }
       slot.appendChild(span);
       word.appendChild(slot);
@@ -209,19 +279,21 @@ function buildKeyboard() {
   }
 }
 
+// per-word keyboard: all letters come back for each new word
 function renderKeyboard() {
-  const inAnswer = new Set(answerLetters(puzzle.answer));
+  const inAnswer = new Set(answerLetters(puzzles[wordIdx].answer));
+  const g = guessedNow();
   for (const key of $('kb').querySelectorAll('.key')) {
     const ch = key.dataset.ch;
-    const used = guessed.includes(ch);
+    const used = g.includes(ch);
     key.classList.toggle('hit', used && inAnswer.has(ch));
     key.classList.toggle('miss', used && !inAnswer.has(ch));
-    key.disabled = used || status !== 'playing';
+    key.disabled = used || status !== 'playing' || transitioning;
   }
 }
 
 function renderFigure(instant = false) {
-  const wrong = wrongSoFar();
+  const wrong = totalWrong();
   for (const part of document.querySelectorAll('#figure .part')) {
     const on = Number(part.dataset.part) < wrong;
     if (instant) {
@@ -243,11 +315,12 @@ function renderLives() {
 
 // ------------------------------------------------------------ guessing
 function guess(ch) {
-  if (status !== 'playing' || dayRolledOver || !puzzle) return;
-  if (guessed.includes(ch)) return;
+  if (status !== 'playing' || dayRolledOver || !puzzles || transitioning) return;
+  if (guessedNow().includes(ch)) return;
   if (!started) { started = true; lastTick = Date.now(); }
-  guessed.push(ch);
-  const hit = answerLetters(puzzle.answer).includes(ch);
+  guessedNow().push(ch);
+  const word = puzzles[wordIdx].answer;
+  const hit = answerLetters(word).includes(ch);
   const keyEl = $('kb').querySelector(`.key[data-ch="${ch}"]`);
   if (hit) {
     keyEl?.classList.add('bounce');
@@ -259,31 +332,60 @@ function guess(ch) {
     void board.offsetWidth;
     board.classList.add('shake');
     renderFigure();
+    renderHint();   // the 3rd total miss unlocks the Stinger hint
   }
   renderKeyboard();
   renderLives();
 
-  if (isWon(puzzle.answer, guessed)) {
-    status = 'won';
-    endMs = elapsedMs;
-    renderTimer();
-    recordStats();
-    save();
-    celebrate();
-    setTimeout(() => showResults(true), 1700);
-  } else if (isLost(puzzle.answer, guessed)) {
+  if (runWrongTotal(answers(), guessedPerWord) >= MAX_WRONG) {
     status = 'lost';
     endMs = elapsedMs;
     renderTimer();
     recordStats();
     save();
-    renderSlots();        // reveal the answer in chalk-red
+    renderSlots();        // reveal the current word in chalk-red
     renderKeyboard();
     renderFigure();
     setTimeout(() => showResults(true), 1400);
+  } else if (isWon(word, guessedNow())) {
+    if (wordIdx === RUN_WORDS - 1) {
+      status = 'won';
+      endMs = elapsedMs;
+      renderTimer();
+      recordStats();
+      save();
+      celebrate();
+      setTimeout(() => showResults(true), 1700);
+    } else {
+      advanceWord();
+    }
   } else {
     save();
   }
+}
+
+// word solved → gold glow, collapse into a chip, deal in the next word
+function advanceWord() {
+  transitioning = true;
+  save();                // the solved word is safe even if the tab dies mid-hand-off
+  renderKeyboard();      // freeze the keys during the hand-off
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const slots = [...$('slots').querySelectorAll('.slot:not(.pre)')];
+  slots.forEach((slot, i) => {
+    if (reduced) slot.classList.add('win');
+    else setTimeout(() => slot.classList.add('win'), i * 45);
+  });
+  const wait = reduced ? 250 : 900;
+  setTimeout(() => {
+    wordIdx++;
+    transitioning = false;
+    save();
+    renderChips();
+    renderStage();
+    renderHint();
+    renderSlots(true);   // new slots deal in
+    renderKeyboard();    // fresh keyboard for the new word
+  }, wait);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -311,7 +413,8 @@ function celebrate() {
 }
 
 // ------------------------------------------------------------ stats + streak
-// dist[i] counts wins that kept (MAX_WRONG − i) lives — i.e. i wrong guesses.
+// dist[i] counts wins that kept (MAX_WRONG − i) lives — i.e. i total
+// misses across the whole run. Same semantics as before: lives left on wins.
 const STATS_KEY = 'bh-stats';
 function loadStats() {
   const blank = { played: 0, wins: 0, cur: 0, max: 0, lastPlay: '', lastWin: '',
@@ -331,7 +434,7 @@ function recordStats() {
   s.played++;
   if (status === 'won') {
     s.wins++;
-    s.dist[wrongSoFar()]++;
+    s.dist[totalWrong()]++;
     s.cur = (s.lastWin && daysBetween(s.lastWin, TODAY) === 1) ? s.cur + 1 : 1;
     s.max = Math.max(s.max, s.cur);
     s.lastWin = TODAY;
@@ -353,7 +456,7 @@ function renderStats() {
   s.dist.forEach((n, i) => {
     const row = document.createElement('div');
     row.className = 'dist-row';
-    const hl = status === 'won' && !TEST_DATE && wrongSoFar() === i && s.lastPlay === TODAY;
+    const hl = status === 'won' && !TEST_DATE && totalWrong() === i && s.lastPlay === TODAY;
     row.innerHTML = `<span class="n">❤️×${MAX_WRONG - i}</span><span class="bar${hl ? ' hl' : ''}"></span>`;
     const bar = row.querySelector('.bar');
     bar.style.width = `${Math.max(10, (n / maxD) * 100)}%`;
@@ -370,13 +473,12 @@ function showResults(fresh) {
     $('resultCard').classList.remove('hidden');
     const n = lives();
     $('resultHead').textContent = status === 'won'
-      ? `SAVED with ${n} ${n === 1 ? 'life' : 'lives'} left! 🪢`
+      ? `Ran the gauntlet — ${n} ${n === 1 ? 'life' : 'lives'} left! 🪢`
       : 'Out of rope 💀';
     $('resultSub').textContent = status === 'won'
-      ? `Solved in ${formatTime(endMs)}`
-      : `It was ${puzzle.answer} — fresh rope at midnight`;
-    $('whyAnswer').textContent = puzzle.answer;
-    $('whyText').textContent = puzzle.whyLocal;
+      ? `Solved ${RUN_WORDS}/${RUN_WORDS} in ${formatTime(endMs)}`
+      : `Fell at word ${wordIdx + 1}/${RUN_WORDS} — it was ${puzzles[wordIdx].answer} · fresh rope at midnight`;
+    renderRecap();
     $('finishedRow').classList.remove('hidden');
     clearInterval(countdownTimer);
     const tick = () => {
@@ -393,13 +495,34 @@ function showResults(fresh) {
   updateLeaderboard(fresh);
 }
 
+// the day's three answers, each with its whyLocal (or the Stinger's hint)
+function renderRecap() {
+  const box = $('recapList');
+  box.innerHTML = '';
+  puzzles.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'recap-row';
+    const head = document.createElement('div');
+    head.className = 'recap-answer';
+    head.textContent = p.answer;
+    const tag = document.createElement('span');
+    tag.className = 'recap-tag';
+    tag.textContent = STAGE_NAMES[i];
+    head.appendChild(tag);
+    const text = document.createElement('p');
+    text.textContent = p.whyLocal || p.hint;
+    row.append(head, text);
+    box.appendChild(row);
+  });
+}
+
 // ------------------------------------------------------------ share
 $('shareBtn').addEventListener('click', async () => {
   const n = lives();
   const hearts = '❤️'.repeat(n) + '🖤'.repeat(MAX_WRONG - n);
   const head = status === 'won'
-    ? `Btown Hangman #${DAY_NUM} — solved with ${n} ${n === 1 ? 'life' : 'lives'} left`
-    : `Btown Hangman #${DAY_NUM} — out of rope 💀`;
+    ? `Btown Hangman #${DAY_NUM} — ran the gauntlet with ${n} ${n === 1 ? 'life' : 'lives'} left`
+    : `Btown Hangman #${DAY_NUM} — the gallows got me at word ${wordIdx + 1}`;
   const streak = loadStats().cur;
   const text = `${head}\n${hearts}\n` +
     (status === 'won' && streak >= 2 ? `🔥 ${streak} days running\n` : '') +
@@ -432,9 +555,10 @@ $('reloadBtn').addEventListener('click', () => location.reload());
 
 // ------------------------------------------------------------ leaderboard (monthly cleanest saves)
 // The shared backend keeps each player's highest score per month. Submitted
-// only on a WIN: livesLeft × 10000 + max(0, 6000 − deciseconds) — lives
-// dominate, speed breaks ties (engine.resultToPoints). Rows decode back to
-// "❤️×5 · 1:43" via engine.pointsToLabel.
+// only on a WIN (all three words solved): livesLeft × 10000 +
+// max(0, 6000 − deciseconds) — lives dominate, speed breaks ties
+// (engine.resultToPoints, unchanged from the one-word game). Rows decode
+// back to "❤️×5 · 1:43" via engine.pointsToLabel.
 const lbBox = $('lb'), lbList = $('lbList'), lbStatus = $('lbStatus');
 const lbForm = $('lbForm'), lbNameInput = $('lbNameInput');
 const lbThisBtn = $('lbThisBtn'), lbLastBtn = $('lbLastBtn'), lbRenameBtn = $('lbRenameBtn');
