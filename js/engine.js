@@ -52,11 +52,18 @@ export function dayNumber(dateStr, epoch = EPOCH) {
 }
 
 // ------------------------------------------------------------ daily pick
-// A deterministic no-repeat walk over the deck: one fixed seeded shuffle
+// A deterministic no-repeat walk over each deck: one fixed seeded shuffle
 // of the deck's indexes (seed below, NOT the date), then day (N−1) mod
 // deck-length indexes into that permutation. Every player gets the same
-// puzzle each day, and no answer repeats until the whole deck has run.
+// three puzzles each day, and no answer repeats until its deck has run.
+// Deck 1 keeps the original launch seed so its schedule never reshuffled;
+// the two decks added for the three-word run get their own seeds.
 const DECK_SEED = 'btown-hangman:deck:v1';
+export const DECK_SEEDS = {
+  deck: DECK_SEED,                       // word 1 — Around Town
+  brief: 'btown-hangman:brief:v1',       // word 2 — From the Brief
+  stinger: 'btown-hangman:stinger:v1',   // word 3 — The Stinger
+};
 
 export function deckPermutation(len, seed = DECK_SEED) {
   const rand = mulberry32(xmur3(seed)());
@@ -68,14 +75,24 @@ export function deckPermutation(len, seed = DECK_SEED) {
   return idx;
 }
 
-export function puzzleIndexForDate(dateStr, deckLen) {
+export function puzzleIndexForDate(dateStr, deckLen, seed = DECK_SEED) {
   const n = dayNumber(dateStr);
   const pos = ((n - 1) % deckLen + deckLen) % deckLen; // safe for pre-epoch testdates
-  return deckPermutation(deckLen)[pos];
+  return deckPermutation(deckLen, seed)[pos];
 }
 
-export function puzzleForDate(dateStr, deck) {
-  return deck[puzzleIndexForDate(dateStr, deck.length)];
+export function puzzleForDate(dateStr, deck, seed = DECK_SEED) {
+  return deck[puzzleIndexForDate(dateStr, deck.length, seed)];
+}
+
+// The day's full run: [word 1, word 2, word 3] for
+// decks = { deck, brief, stinger } (each an array of entries).
+export function puzzlesForDate(dateStr, decks) {
+  return [
+    puzzleForDate(dateStr, decks.deck, DECK_SEEDS.deck),
+    puzzleForDate(dateStr, decks.brief, DECK_SEEDS.brief),
+    puzzleForDate(dateStr, decks.stinger, DECK_SEEDS.stinger),
+  ];
 }
 
 // ------------------------------------------------------------ hangman rules
@@ -107,6 +124,35 @@ export function isWon(answer, guessed) {
 
 export function isLost(answer, guessed) {
   return wrongGuesses(answer, guessed).length >= MAX_WRONG;
+}
+
+// ------------------------------------------------------------ the three-word run
+// One daily run = three words with ONE shared pool of six lives. Each
+// word gets its own guessed-letter list (the keyboard resets per word),
+// but every miss anywhere in the run draws the same chalk guy.
+export const RUN_WORDS = 3;
+
+// Word 3's hint stays locked until the run's 3rd total miss.
+export const HINT_LOCK_MISSES = 3;
+
+// answers: array of answer strings; guessedLists: parallel array of
+// guessed-letter arrays (one per word attempted so far).
+export function runWrongTotal(answers, guessedLists) {
+  return answers.reduce((sum, answer, i) =>
+    sum + wrongGuesses(answer, guessedLists[i] || []).length, 0);
+}
+
+export function runLivesLeft(answers, guessedLists) {
+  return Math.max(0, MAX_WRONG - runWrongTotal(answers, guessedLists));
+}
+
+export function runIsLost(answers, guessedLists) {
+  return runWrongTotal(answers, guessedLists) >= MAX_WRONG;
+}
+
+export function runIsWon(answers, guessedLists) {
+  return !runIsLost(answers, guessedLists) &&
+    answers.every((answer, i) => isWon(answer, guessedLists[i] || []));
 }
 
 // ------------------------------------------------------------ leaderboard score
