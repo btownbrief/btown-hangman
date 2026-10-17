@@ -559,7 +559,6 @@ footer a, .fleet-credit a { color: var(--accent); text-decoration: none; }
 }
 
 /* Keep the decision to buy a clue visible, without giving away a category. */
-.challenge-note { color: var(--muted); font-size: 12px; text-align: center; }
 .hint { min-height: 44px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; }
 .hint-button {
   min-height: 44px; padding: 8px 16px; border: 1px solid var(--border);
@@ -575,3 +574,6 @@ footer a, .fleet-credit a { color: var(--accent); text-decoration: none; }
   .figure-panel { width: min(180px, 44vw); }
   .key { height: 44px; }
 }
+
+.stats-details, .lb { margin-top: 14px; padding-top: 10px; }
+summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 6px 0; }

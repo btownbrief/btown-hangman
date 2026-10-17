@@ -14,6 +14,9 @@ All clues start hidden. A player can buy one clue per word for one shared life,
 but cannot spend the last life on a clue. Keyboard resets per word; lives and
 timer carry over. No automatic clue unlocks or category giveaways.
 
+Keep the interface minimal: no automatic help popup, category names, explanatory
+board copy, ticker, or promotional blocks. Help stays behind the question mark.
+
 ## Invariants
 
 - `js/engine.js` must remain pure and deterministic: no DOM or `Date.now()`.

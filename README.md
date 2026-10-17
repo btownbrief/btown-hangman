@@ -48,7 +48,9 @@ length or seed changes that schedule.
 `bh-state-v3` stores per-word guesses and purchased clues. The prior local-word
 run (`bh-state-v2`) is retained but not loaded because its answers have changed.
 Existing `bh-stats`, streaks, player identity, and leaderboard records remain.
-The introduction is shown once for this edition using `bh-seen-help-v3`.
+Play starts immediately. The question-mark button opens three short instructions;
+there is no automatic introduction. Statistics and the leaderboard are collapsed
+on the result screen.
 If someone already completed the old game today, lifetime stats and score
 submission still count at most once for that date.
 

@@ -58,9 +58,8 @@
       </div>
 
       <div class="stage" id="stage"></div>
-      <div class="challenge-note">No theme. No free clues.</div>
-      <div class="hint" id="hint" aria-live="polite"></div>
       <div class="slots" id="slots" aria-live="polite"></div>
+      <div class="hint" id="hint" aria-live="polite"></div>
     </div>
 
     <div id="toast" class="hidden"></div>
@@ -92,12 +91,9 @@
     <div class="modal">
       <button class="close" data-close>&times;</button>
       <h2>How to play</h2>
-      <p>Every day is a <strong>three-word gauntlet</strong> on one gallows: <strong>The Opener</strong>, <strong>The Twist</strong>, and <strong>The Stinger</strong>. All general English words, with shorter, trickier words as you go. No local trivia or category giveaways. Guess one letter at a time — tap the keyboard or type.</p>
-      <p>You get <strong>six lives for the whole run</strong>. Every wrong letter, on any word, draws one more piece of the little chalk guy — spend all six lives and the run ends. The keyboard resets for each new word; the gallows doesn't.</p>
-      <p>Every word starts with <strong>no clue</strong>. Stuck? Reveal its clue for <strong>one life</strong>. That life stays spent for the whole run, and you cannot spend your last life on a clue.</p>
-      <p>The clock starts on your first guess or clue and runs across all three words. Winning runs make the monthly leaderboard: <strong>lives kept matter most, speed breaks ties</strong> — a clean no-miss gauntlet tops the board.</p>
-      <p>Three fresh words every midnight (Vermont time, obviously).</p>
-      <p class="fine">A production of <a href="https://www.btownbrief.com" target="_blank" rel="noopener">the BTown Brief</a>, Burlington's favorite newsletter.</p>
+      <p>Guess three words. Six lives total.</p>
+      <p>Wrong letter? Lose a life.</p>
+      <p>A clue costs one life.</p>
     </div>
   </div>
 
@@ -113,7 +109,8 @@
           <div id="recapList"></div>
         </div>
       </div>
-      <h2 id="statsHead">Statistics</h2>
+      <details class="stats-details">
+      <summary id="statsHead">Statistics</summary>
       <div class="stat-row">
         <div class="stat"><b id="stPlayed">0</b><small>Played</small></div>
         <div class="stat"><b id="stWinPct">0</b><small>Win %</small></div>
@@ -122,16 +119,17 @@
       </div>
       <h3 id="distHead">Lives left on wins</h3>
       <div id="dist"></div>
+      </details>
       <div id="finishedRow" class="hidden">
         <div class="next-box">
-          <div class="next-label">NEXT GAUNTLET</div>
+          <div class="next-label">NEXT GAME</div>
           <div class="countdown" id="countdown">--:--:--</div>
         </div>
         <button class="share-btn" id="shareBtn">SHARE 🪢</button>
       </div>
 
-      <div class="lb hidden" id="lb">
-        <h3>🏆 Cleanest saves</h3>
+      <details class="lb hidden" id="lb">
+        <summary>Leaderboard</summary>
         <div class="lb-tabs">
           <button class="tab sel" id="lbThisBtn">This Month</button>
           <button class="tab" id="lbLastBtn">Last Month</button>
@@ -143,27 +141,13 @@
           <button class="tab" id="lbSaveBtn">Save</button>
         </div>
         <button class="tab lb-rename" id="lbRenameBtn">✏️ Change name</button>
-      </div>
+      </details>
 
-      <div class="stepup">
-        <div class="stepup-title">Want to step it up a notch?</div>
-        <a class="share-btn stepup-btn" href="https://play.btownbrief.com/btown-wordle/">Play BTown Wordle →</a>
-        <a class="tab stepup-btn secondary" href="https://play.btownbrief.com/maple-scramble/">Then try Maple Scramble →</a>
-      </div>
-
-      <div class="fleet-credit">
-        A <strong>Btown Games</strong> production ·
-        <a href="https://play.btownbrief.com/">More games →</a> ·
-        <a href="https://www.btownbrief.com" target="_blank" rel="noopener">Read the BTown Brief →</a>
-      </div>
     </div>
   </div>
 
-  <footer>
-    A <strong>Btown Games</strong> production · <a href="https://play.btownbrief.com/">More games →</a> · <a href="https://www.btownbrief.com" target="_blank" rel="noopener">Read the BTown Brief →</a>
-  </footer>
+  <footer><a href="https://play.btownbrief.com/">More games</a></footer>
 
   <script type="module" src="js/main.js"></script>
-<script src="https://play.btownbrief.com/ticker.js" defer></script>
 </body>
 </html>
