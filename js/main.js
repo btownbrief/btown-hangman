@@ -43,8 +43,6 @@ const TEST_DATE = new URLSearchParams(location.search).get('testdate');
 const TODAY = TEST_DATE || nyDateStr();
 const DAY_NUM = dayNumber(TODAY);
 
-const STAGE_NAMES = ['The Opener', 'The Twist', 'The Stinger'];
-
 // ------------------------------------------------------------ state
 let puzzles = null;         // [{answer,hint}, …] for TODAY
 let wordIdx = 0;            // which word of the run is in play (0..2)
@@ -66,7 +64,7 @@ const lives = () => (puzzles ? runLivesLeft(answers(), guessedPerWord, hintsReve
 
 // ------------------------------------------------------------ boot
 async function boot() {
-  $('dayBar').textContent = `#${DAY_NUM} · ${MAX_WRONG} lives · three words`;
+  $('dayBar').textContent = `Daily #${DAY_NUM}`;
   buildKeyboard();
   await loadDecks();
 }
@@ -108,13 +106,7 @@ function restore() {
   if (!TEST_DATE) {
     try { st = JSON.parse(localStorage.getItem(STATE_KEY)); } catch { /* corrupt */ }
   }
-  if (!st || st.date !== TODAY) {
-    if (!TEST_DATE && !localStorage.getItem('bh-seen-help-v3')) {
-      localStorage.setItem('bh-seen-help-v3', '1');
-      $('helpOverlay').classList.remove('hidden');
-    }
-    return;
-  }
+  if (!st || st.date !== TODAY) return;
   // Trust the save only if it's a plausible per-word letter list for today.
   const lists = Array.isArray(st.guessedPerWord) ? st.guessedPerWord : [];
   const clean = Array.from({ length: RUN_WORDS }, (_, i) => {
@@ -202,8 +194,8 @@ function renderChips() {
 }
 
 function renderStage() {
-  $('stage').textContent =
-    `Word ${wordIdx + 1} of ${RUN_WORDS} — ${STAGE_NAMES[wordIdx]}`;
+  $('stage').textContent = `${wordIdx + 1} / ${RUN_WORDS}`;
+  $('stage').setAttribute('aria-label', `Word ${wordIdx + 1} of ${RUN_WORDS}`);
 }
 
 function renderHint() {
@@ -217,7 +209,9 @@ function renderHint() {
   }
   const button = document.createElement('button');
   button.className = 'hint-button';
-  button.textContent = lives() > 1 ? 'Reveal clue · costs 1 life' : 'Last life · no clue available';
+  button.textContent = 'Clue −1 ♥';
+  button.setAttribute('aria-label', 'Reveal clue for one life');
+  button.title = lives() > 1 ? 'Reveal clue for one life' : 'You need at least two lives';
   button.disabled = transitioning || !canRevealHint(lives(), hintsRevealed[wordIdx]);
   button.addEventListener('click', revealHint);
   box.append(button);
@@ -490,11 +484,11 @@ function showResults(fresh) {
     $('resultCard').classList.remove('hidden');
     const n = lives();
     $('resultHead').textContent = status === 'won'
-      ? `Ran the gauntlet — ${n} ${n === 1 ? 'life' : 'lives'} left! 🪢`
+      ? 'You won!'
       : 'Out of rope 💀';
     $('resultSub').textContent = status === 'won'
-      ? `Solved ${RUN_WORDS}/${RUN_WORDS} in ${formatTime(endMs)}`
-      : `Fell at word ${wordIdx + 1}/${RUN_WORDS} — it was ${puzzles[wordIdx].answer} · fresh rope at midnight`;
+      ? `${n} ${n === 1 ? 'life' : 'lives'} left · ${formatTime(endMs)}`
+      : `Word ${wordIdx + 1} / ${RUN_WORDS} · ${puzzles[wordIdx].answer}`;
     renderRecap();
     $('finishedRow').classList.remove('hidden');
     clearInterval(countdownTimer);
@@ -512,23 +506,17 @@ function showResults(fresh) {
   updateLeaderboard(fresh);
 }
 
-// The day's three answers with their definitions.
+// Keep the result recap to the three answers.
 function renderRecap() {
   const box = $('recapList');
   box.innerHTML = '';
-  puzzles.forEach((p, i) => {
+  puzzles.forEach((p) => {
     const row = document.createElement('div');
     row.className = 'recap-row';
     const head = document.createElement('div');
     head.className = 'recap-answer';
     head.textContent = p.answer;
-    const tag = document.createElement('span');
-    tag.className = 'recap-tag';
-    tag.textContent = STAGE_NAMES[i];
-    head.appendChild(tag);
-    const text = document.createElement('p');
-    text.textContent = p.hint;
-    row.append(head, text);
+    row.append(head);
     box.appendChild(row);
   });
 }
@@ -561,7 +549,10 @@ function toast(msg, ms = 1400) {
 
 // ------------------------------------------------------------ modals
 $('helpBtn').addEventListener('click', () => $('helpOverlay').classList.remove('hidden'));
-$('statsBtn').addEventListener('click', () => showResults(false));
+$('statsBtn').addEventListener('click', () => {
+  document.querySelector('.stats-details').open = true;
+  showResults(false);
+});
 document.querySelectorAll('.overlay').forEach((ov) => {
   ov.addEventListener('click', (e) => {
     if (e.target === ov && ov.dataset.static === undefined) ov.classList.add('hidden');
