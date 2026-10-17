@@ -5,10 +5,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  EPOCH, MAX_WRONG, RUN_WORDS, HINT_LOCK_MISSES, DECK_SEEDS,
+  EPOCH, MAX_WRONG, RUN_WORDS, HINT_COST, canRevealHint, DECK_SEEDS,
   dayNumber, deckPermutation, puzzleIndexForDate, puzzleForDate,
   puzzlesForDate, answerLetters, wrongGuesses, livesLeft, isWon, isLost,
-  runWrongTotal, runLivesLeft, runIsWon, runIsLost,
+  runWrongTotal, runLivesSpent, runLivesLeft, runIsWon, runIsLost,
   resultToPoints, pointsToLabel, formatTime, isGuessable,
 } from '../js/engine.js';
 
@@ -29,46 +29,15 @@ ok(`decks have healthy sizes (${deck.length} / ${brief.length} / ${stinger.lengt
   assert.ok(stinger.length >= 120, `stinger: only ${stinger.length}`);
 });
 
-ok('deck + brief entries have answer / hint / whyLocal strings', () => {
-  for (const [name, d] of [['deck', deck], ['brief', brief]]) {
-    for (const [i, e] of d.entries()) {
-      assert.equal(typeof e.answer, 'string', `${name} ${i} answer`);
-      assert.equal(typeof e.hint, 'string', `${name} ${i} (${e.answer}) hint`);
-      assert.equal(typeof e.whyLocal, 'string', `${name} ${i} (${e.answer}) whyLocal`);
-      assert.ok(e.answer.length > 0 && e.hint.length > 0 && e.whyLocal.length > 0,
-        `${name} ${i} (${e.answer}) has an empty field`);
+ok('all decks contain general words with a nonempty clue', () => {
+  for (const [name, d, min, max] of [['opener', deck, 5, 11], ['twist', brief, 4, 7], ['stinger', stinger, 5, 8]]) {
+    for (const e of d) {
+      assert.match(e.answer, /^[A-Z]+$/, `${name}: ${e.answer}`);
+      assert.ok(e.answer.length >= min && e.answer.length <= max, e.answer);
+      assert.equal(typeof e.hint, 'string', e.answer);
+      assert.ok(e.hint.trim().length > 0, e.answer);
+      assert.ok(!('whyLocal' in e), `${e.answer}: obsolete local context`);
     }
-  }
-});
-
-ok('stinger entries have answer / hint strings (whyLocal not required)', () => {
-  for (const [i, e] of stinger.entries()) {
-    assert.equal(typeof e.answer, 'string', `stinger ${i} answer`);
-    assert.equal(typeof e.hint, 'string', `stinger ${i} (${e.answer}) hint`);
-    assert.ok(e.answer.length > 0 && e.hint.length > 0,
-      `stinger ${i} (${e.answer}) has an empty field`);
-  }
-});
-
-ok('deck + brief answers use only A–Z, space, hyphen, apostrophe (ALL CAPS)', () => {
-  for (const e of [...deck, ...brief]) {
-    assert.match(e.answer, /^[A-Z' -]+$/, e.answer);
-    assert.ok(!/^[ '-]|[ '-]$/.test(e.answer), `${e.answer}: leading/trailing separator`);
-  }
-});
-
-ok('after normalization every deck/brief answer is 4–18 guessable letters', () => {
-  for (const e of [...deck, ...brief]) {
-    const letters = answerLetters(e.answer);
-    assert.match(letters, /^[A-Z]+$/, e.answer);
-    assert.ok(letters.length >= 4, `${e.answer}: only ${letters.length} letters`);
-    assert.ok(letters.length <= 18, `${e.answer}: ${letters.length} letters`);
-  }
-});
-
-ok('stinger answers are single words, 5–8 letters, A–Z only', () => {
-  for (const e of stinger) {
-    assert.match(e.answer, /^[A-Z]{5,8}$/, e.answer);
   }
 });
 
@@ -99,9 +68,9 @@ ok('day #1 lands on the epoch', () => {
   assert.equal(dayNumber('2026-08-29'), 2);
 });
 
-ok('deck 1 kept its launch seed — day #1 word 1 is still BIKE PATH', () => {
-  assert.equal(DECK_SEEDS.deck, 'btown-hangman:deck:v1');
-  assert.equal(puzzleForDate(EPOCH, deck, DECK_SEEDS.deck).answer, 'BIKE PATH');
+ok('general-word edition has new deterministic schedules', () => {
+  assert.equal(DECK_SEEDS.deck, 'btown-hangman:deck:v3');
+  assert.notEqual(puzzleForDate(EPOCH, deck, DECK_SEEDS.deck).answer, 'BIKE PATH');
 });
 
 ok('the daily three-word pick is deterministic', () => {
@@ -208,9 +177,26 @@ ok('run simulation: solve 3 words with misses spread across them', () => {
   assert.ok(runIsLost(answers, g) && !runIsWon(answers, g));
 });
 
-ok('run constants: 3 words, hint lock at 3 misses', () => {
+ok('clues cost one shared life and never spend the last life', () => {
   assert.equal(RUN_WORDS, 3);
-  assert.equal(HINT_LOCK_MISSES, 3);
+  assert.equal(HINT_COST, 1);
+  assert.ok(canRevealHint(6, false));
+  assert.ok(canRevealHint(2, false));
+  assert.ok(!canRevealHint(1, false));
+  assert.ok(!canRevealHint(0, false));
+  assert.ok(!canRevealHint(6, true));
+  const answers = ['CIRCUIT', 'CLEFT', 'JAZZY'];
+  const solved = answers.map(a => [...new Set(a)]);
+  const clues = [true, false, true];
+  assert.equal(runWrongTotal(answers, solved), 0);
+  assert.equal(runLivesSpent(answers, solved, clues), 2);
+  assert.equal(runLivesLeft(answers, solved, clues), 4);
+  assert.ok(runIsWon(answers, solved, clues));
+  const guesses = [['X', 'Z'], ['A', 'B'], []];
+  assert.equal(runLivesLeft(answers, guesses, clues), 0);
+  assert.ok(runIsLost(answers, guesses, clues));
+  assert.ok(!runIsWon(answers, guesses, clues));
+  assert.equal(runLivesSpent(answers, [[], [], []], [false, true, false]), 1);
 });
 
 // ------------------------------------------------------------ scoring (UNCHANGED)

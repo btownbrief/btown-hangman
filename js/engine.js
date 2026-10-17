@@ -56,13 +56,12 @@ export function dayNumber(dateStr, epoch = EPOCH) {
 // of the deck's indexes (seed below, NOT the date), then day (N−1) mod
 // deck-length indexes into that permutation. Every player gets the same
 // three puzzles each day, and no answer repeats until its deck has run.
-// Deck 1 keeps the original launch seed so its schedule never reshuffled;
-// the two decks added for the three-word run get their own seeds.
-const DECK_SEED = 'btown-hangman:deck:v1';
+// v3 deliberately starts new schedules for the general-word challenge.
+const DECK_SEED = 'btown-hangman:deck:v3';
 export const DECK_SEEDS = {
-  deck: DECK_SEED,                       // word 1 — Around Town
-  brief: 'btown-hangman:brief:v1',       // word 2 — From the Brief
-  stinger: 'btown-hangman:stinger:v1',   // word 3 — The Stinger
+  deck: DECK_SEED,                       // word 1 — The Opener
+  brief: 'btown-hangman:brief:v3',       // word 2 — The Twist
+  stinger: 'btown-hangman:stinger:v3',   // word 3 — The Stinger
 };
 
 export function deckPermutation(len, seed = DECK_SEED) {
@@ -132,8 +131,11 @@ export function isLost(answer, guessed) {
 // but every miss anywhere in the run draws the same chalk guy.
 export const RUN_WORDS = 3;
 
-// Word 3's hint stays locked until the run's 3rd total miss.
-export const HINT_LOCK_MISSES = 3;
+// Each optional clue costs one shared life; never spend the last life.
+export const HINT_COST = 1;
+export function canRevealHint(lives, revealed) {
+  return !revealed && lives > HINT_COST;
+}
 
 // answers: array of answer strings; guessedLists: parallel array of
 // guessed-letter arrays (one per word attempted so far).
@@ -142,16 +144,21 @@ export function runWrongTotal(answers, guessedLists) {
     sum + wrongGuesses(answer, guessedLists[i] || []).length, 0);
 }
 
-export function runLivesLeft(answers, guessedLists) {
-  return Math.max(0, MAX_WRONG - runWrongTotal(answers, guessedLists));
+export function runLivesSpent(answers, guessedLists, hints = []) {
+  return runWrongTotal(answers, guessedLists)
+    + answers.reduce((sum, _, i) => sum + (hints[i] === true ? HINT_COST : 0), 0);
 }
 
-export function runIsLost(answers, guessedLists) {
-  return runWrongTotal(answers, guessedLists) >= MAX_WRONG;
+export function runLivesLeft(answers, guessedLists, hints = []) {
+  return Math.max(0, MAX_WRONG - runLivesSpent(answers, guessedLists, hints));
 }
 
-export function runIsWon(answers, guessedLists) {
-  return !runIsLost(answers, guessedLists) &&
+export function runIsLost(answers, guessedLists, hints = []) {
+  return runLivesSpent(answers, guessedLists, hints) >= MAX_WRONG;
+}
+
+export function runIsWon(answers, guessedLists, hints = []) {
+  return !runIsLost(answers, guessedLists, hints) &&
     answers.every((answer, i) => isWon(answer, guessedLists[i] || []));
 }
 

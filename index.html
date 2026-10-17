@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Btown Hangman · Btown Games</title>
-  <meta name="description" content="A daily Burlington hangman gauntlet. Three words, one gallows, six lives, every midnight. From the BTown Brief." />
+  <meta name="description" content="Three tricky everyday words. Six shared lives. No categories, no free clues. A fresh hangman challenge every midnight. From the BTown Brief." />
   <meta property="og:title" content="Btown Hangman" />
   <meta property="og:description" content="Three words a day, six shared lives. Can you run the gauntlet and save the little chalk guy? A Btown Games production." />
   <meta property="og:url" content="https://play.btownbrief.com/btown-hangman/" />
@@ -58,7 +58,8 @@
       </div>
 
       <div class="stage" id="stage"></div>
-      <div class="hint" id="hint"></div>
+      <div class="challenge-note">No theme. No free clues.</div>
+      <div class="hint" id="hint" aria-live="polite"></div>
       <div class="slots" id="slots" aria-live="polite"></div>
     </div>
 
@@ -91,10 +92,10 @@
     <div class="modal">
       <button class="close" data-close>&times;</button>
       <h2>How to play</h2>
-      <p>Every day is a <strong>three-word gauntlet</strong> on one gallows: an <strong>Around Town</strong> word, one <strong>From the Brief</strong>, and a short, nasty <strong>Stinger</strong> to finish. Guess one letter at a time — tap the keyboard or type.</p>
-      <p>You get <strong>six lives for the whole run</strong>. Every wrong letter, on any word, draws one more piece of the little chalk guy — six misses anywhere and he hangs. The keyboard resets for each new word; the gallows doesn't.</p>
-      <p>The Stinger's hint stays <strong>locked until your third miss</strong> — stay clean and you're on your own.</p>
-      <p>The clock starts on your first guess and runs across all three words. Winning runs make the monthly leaderboard: <strong>lives kept matter most, speed breaks ties</strong> — a clean no-miss gauntlet tops the board.</p>
+      <p>Every day is a <strong>three-word gauntlet</strong> on one gallows: <strong>The Opener</strong>, <strong>The Twist</strong>, and <strong>The Stinger</strong>. All general English words, with shorter, trickier words as you go. No local trivia or category giveaways. Guess one letter at a time — tap the keyboard or type.</p>
+      <p>You get <strong>six lives for the whole run</strong>. Every wrong letter, on any word, draws one more piece of the little chalk guy — spend all six lives and the run ends. The keyboard resets for each new word; the gallows doesn't.</p>
+      <p>Every word starts with <strong>no clue</strong>. Stuck? Reveal its clue for <strong>one life</strong>. That life stays spent for the whole run, and you cannot spend your last life on a clue.</p>
+      <p>The clock starts on your first guess or clue and runs across all three words. Winning runs make the monthly leaderboard: <strong>lives kept matter most, speed breaks ties</strong> — a clean no-miss gauntlet tops the board.</p>
       <p>Three fresh words every midnight (Vermont time, obviously).</p>
       <p class="fine">A production of <a href="https://www.btownbrief.com" target="_blank" rel="noopener">the BTown Brief</a>, Burlington's favorite newsletter.</p>
     </div>
