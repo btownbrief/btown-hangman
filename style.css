@@ -557,3 +557,21 @@ footer a, .fleet-credit a { color: var(--accent); text-decoration: none; }
   #figure .part.on { animation: none; stroke-dashoffset: 0; }
   #saved.show { opacity: 1; transform: translate(-50%, -50%); }
 }
+
+/* Keep the decision to buy a clue visible, without giving away a category. */
+.challenge-note { color: var(--muted); font-size: 12px; text-align: center; }
+.hint { min-height: 44px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; }
+.hint-button {
+  min-height: 44px; padding: 8px 16px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--panel-2); color: var(--text);
+  font: inherit; cursor: pointer;
+}
+.hint-button:disabled { color: var(--muted); cursor: default; }
+.hint-button:focus-visible, .key:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.word { max-width: 100%; }
+@media (max-height: 680px) {
+  .board { gap: 5px; }
+  #figure { max-height: 20vh; }
+  .figure-panel { width: min(180px, 44vw); }
+  .key { height: 44px; }
+}

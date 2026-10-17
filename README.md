@@ -1,90 +1,75 @@
 # Btown Hangman
 
-The daily Burlington hangman gauntlet — a
-[Btown Games](https://play.btownbrief.com) production from the
-[BTown Brief](https://www.btownbrief.com).
+A daily three-word challenge from [Btown Games](https://play.btownbrief.com).
 
 **Play: https://play.btownbrief.com/btown-hangman/**
 
-Every day is a **three-word run on one gallows** with **six lives shared
-across the whole thing**:
+Solve three general English words with **six lives shared across the run**:
 
-1. **Around Town** — a Burlington word or phrase (creemees, Church
-   Street, stick season, Champ, the works), hint shown.
-2. **From the Brief** — a name from the BTown Brief's world: the
-   businesses, venues, and fixtures the newsletter covers, hint shown.
-3. **The Stinger** — a short, nasty general word (rare letters, few
-   vowels). Its hint stays **locked until your third total miss** of the
-   run.
+1. **The Opener** — a longer word with more letters to work with.
+2. **The Twist** — a shorter word with fewer footholds.
+3. **The Stinger** — unusual letters, repeated letters, or tricky spelling.
 
-Guess one letter at a time on the on-screen (or physical) keyboard. Wrong
-letters — on any word — draw one more piece of the little chalk figure;
-six misses anywhere and the day is lost. The keyboard resets for each new
-word; the gallows and the clock don't. Solved words collapse into ✓ chips
-above the board. Spaces, hyphens, and apostrophes are pre-revealed. The
-end screen recaps all three answers with their "why it's local" blurbs.
-Streaks, stats, an emoji share, and the shared monthly leaderboard
-included. Mid-run progress saves locally, and the clock only runs while
-you're looking at the page.
+There are no local categories or starting clues. Every word offers an optional
+**clue for one life**. A clue can be bought once per word, never with your last
+life. Wrong guesses and purchased clues draw the same six-part figure. The
+keyboard resets each word; spent lives and the clock carry over. The timer
+starts on the first guess or clue and runs while the page is visible.
 
-Plain static site — no build step, no frameworks. `index.html` + `style.css`
-+ ES modules in `js/`. Deployed by GitHub Pages via
-`.github/workflows/deploy.yml` on push.
+All three words must be solved to win. Results show the answers and definitions,
+plus lifetime stats, streaks, sharing, and the existing monthly leaderboard.
 
-## The daily pick
+## Files and daily selection
 
-`js/engine.js` turns the date string (America/New_York) into three
-puzzles, the same for every player:
+Plain static site: `index.html`, `style.css`, and ES modules in `js/`; no build.
+GitHub Pages deploys on a push to `main` via `.github/workflows/deploy.yml`.
 
-1. Three decks: `data/deck.json` (word 1, answer / hint / whyLocal),
-   `data/brief-deck.json` (word 2, same schema), and
-   `data/stinger-deck.json` (word 3, answer / hint only).
-2. Each deck gets its **own fixed** seeded shuffle of its indexes
-   (seeds `btown-hangman:deck:v1` / `:brief:v1` / `:stinger:v1`,
-   xmur3 → mulberry32) defining that deck's play order. Deck 1 kept the
-   original launch seed, so its schedule never reshuffled.
-3. Day N (epoch `2026-08-28` = day #1) plays permutation slot
-   `(N − 1) mod deck length` in each deck — no answer repeats until its
-   whole deck has run, then it cycles.
+The historical filenames remain, but all three decks now contain general words:
 
-No server involved; same date in → same three puzzles out on every
-device. **Changing a deck's length** reshuffles that deck's whole walk
-(the permutation length changes) — that's fine, but do it knowingly.
+- `data/deck.json`: 120 Openers, 5–11 letters.
+- `data/brief-deck.json`: 80 Twists, 4–7 letters.
+- `data/stinger-deck.json`: 184 Stingers, 5–8 letters.
 
-## Deck editing rules
+Entries have `answer` (uppercase A–Z, single word) and a short `hint`.
+No answer may occur in more than one deck. Favor recognizable words and fair
+clues; avoid proper nouns and specialist vocabulary that requires a dictionary.
 
-- **Which deck gets what:** Burlington/Vermont places, seasons, and
-  general local life → `deck.json`. Named businesses, venues,
-  institutions, and BTown Brief fixtures (sections, games, apps) →
-  `brief-deck.json`. Short hard general English words (5–8 letters,
-  single word, no proper nouns) → `stinger-deck.json`.
-- **No answer may appear in more than one deck** — the test enforces it
-  across all three.
-- deck/brief answers: ALL CAPS, only `A–Z`, space, hyphen, apostrophe;
-  4–18 letters after stripping separators; `answer` + `hint` + `whyLocal`
-  all required and true (no invented facts).
-- stinger answers: single word, 5–8 letters `A–Z`; `answer` + `hint`.
-  Keep hints short — players only see them after their 3rd miss.
+`js/engine.js` is pure and deterministic. It uses a fixed seeded permutation
+for each deck, walked by day number in America/New_York. Same date means the
+same three words on every device; a deck does not repeat until its full cycle
+has run. Epoch `2026-08-28` still supplies the public day number.
 
-## Scoring
+The general-word edition deliberately uses new `:v3` seeds and new deck contents,
+so historical date previews also use the new word schedules. Changing a deck's
+length or seed changes that schedule.
 
-Submitted to the shared monthly leaderboard **only on a win** (all three
-words solved) — the formula is unchanged from the one-word game:
+## Saves and scoring
+
+`bh-state-v3` stores per-word guesses and purchased clues. The prior local-word
+run (`bh-state-v2`) is retained but not loaded because its answers have changed.
+Existing `bh-stats`, streaks, player identity, and leaderboard records remain.
+The introduction is shown once for this edition using `bh-seen-help-v3`.
+If someone already completed the old game today, lifetime stats and score
+submission still count at most once for that date.
+
+Winning scores keep the established formula:
 
 ```
 livesLeft × 10000 + max(0, 6000 − deciseconds elapsed)
 ```
 
-`livesLeft` is the lives remaining after word 3; the clock starts on the
-first guess and runs across the whole run. Lives dominate; speed breaks
-ties. Max is still 66000. In-game rows decode back to friendly text
-("❤️×5 · 1:43").
+Purchased clues reduce `livesLeft` just like misses. Lives dominate speed; losses
+are never submitted. Existing monthly scores from the easier edition remain.
 
-## Testing
+## Validation
 
 ```
 node scripts/test-engine.mjs
 ```
 
-Play any date with `?testdate=YYYY-MM-DD` — test dates never touch saves,
-stats, streaks, or the leaderboard.
+Tests cover deck integrity, deterministic no-repeat cycles, shared lives,
+clue costs, last-life protection, win/loss rules, and the existing score formula.
+
+`?testdate=YYYY-MM-DD` previews a date without writing saves, stats, streaks,
+player identity, or leaderboard scores. Check the UI on a narrow phone, including
+a purchased clue, a word transition, a loss, and a restored paid clue.

@@ -1,7 +1,7 @@
 {
   "name": "Btown Hangman",
   "short_name": "Btown Hangman",
-  "description": "One Burlington word a day, six lives. A Btown Games production.",
+  "description": "Three tricky words a day. Six shared lives. No free clues. A Btown Games production.",
   "start_url": ".",
   "display": "fullscreen",
   "orientation": "portrait",

@@ -3,15 +3,12 @@
 // the keyboard, letter slots, the stroke-drawn figure, timer, stats,
 // share, and the monthly leaderboard.
 //
-// One daily run = THREE words on one shared gallows: word 1 "Around
-// Town" (data/deck.json), word 2 "From the Brief" (data/brief-deck.json),
-// word 3 "The Stinger" (data/stinger-deck.json). Six lives total across
-// the whole run; the keyboard resets for each new word, the clock and the
-// chalk guy don't.
+// Three general words, six shared lives. Optional clues cost one life.
+// The keyboard resets per word; the clock and figure carry across the run.
 
 import {
-  MAX_WRONG, RUN_WORDS, HINT_LOCK_MISSES, dayNumber, puzzlesForDate,
-  answerLetters, wrongGuesses, runWrongTotal, runLivesLeft, isWon, isLost,
+  MAX_WRONG, RUN_WORDS, canRevealHint, dayNumber, puzzlesForDate,
+  answerLetters, runLivesSpent, runLivesLeft, isWon,
   isGuessable, resultToPoints, pointsToLabel, formatTime,
 } from './engine.js';
 import {
@@ -46,12 +43,13 @@ const TEST_DATE = new URLSearchParams(location.search).get('testdate');
 const TODAY = TEST_DATE || nyDateStr();
 const DAY_NUM = dayNumber(TODAY);
 
-const STAGE_NAMES = ['Around Town', 'From the Brief', 'The Stinger'];
+const STAGE_NAMES = ['The Opener', 'The Twist', 'The Stinger'];
 
 // ------------------------------------------------------------ state
-let puzzles = null;         // [{answer,hint,whyLocal}, {…}, {answer,hint}] for TODAY
+let puzzles = null;         // [{answer,hint}, …] for TODAY
 let wordIdx = 0;            // which word of the run is in play (0..2)
 let guessedPerWord = [[], [], []]; // letters guessed, per word, in order
+let hintsRevealed = [false, false, false];
 let status = 'playing';     // playing | won | lost
 let started = false;        // first guess made — clock running
 let elapsedMs = 0;
@@ -63,9 +61,8 @@ let transitioning = false;  // word-to-word hand-off animation in flight
 
 const answers = () => puzzles.map((p) => p.answer);
 const guessedNow = () => guessedPerWord[wordIdx];
-const totalWrong = () => (puzzles ? runWrongTotal(answers(), guessedPerWord) : 0);
-const lives = () => (puzzles ? runLivesLeft(answers(), guessedPerWord) : MAX_WRONG);
-const hintUnlocked = () => totalWrong() >= HINT_LOCK_MISSES;
+const totalSpent = () => (puzzles ? runLivesSpent(answers(), guessedPerWord, hintsRevealed) : 0);
+const lives = () => (puzzles ? runLivesLeft(answers(), guessedPerWord, hintsRevealed) : MAX_WRONG);
 
 // ------------------------------------------------------------ boot
 async function boot() {
@@ -98,13 +95,12 @@ async function loadDecks() {
 $('deckRetryBtn').addEventListener('click', () => { void loadDecks(); });
 
 // ------------------------------------------------------------ persistence
-// v2: the three-word run. Old single-word 'bh-state' saves are ignored
-// on purpose (no migration — the schema changed the night before day 1).
-const STATE_KEY = 'bh-state-v2';
+// New words and paid clues need a fresh run; old saves and lifetime stats remain.
+const STATE_KEY = 'bh-state-v3';
 function save() {
   if (TEST_DATE) return;
   localStorage.setItem(STATE_KEY, JSON.stringify({
-    date: TODAY, wordIdx, guessedPerWord, status, started, elapsedMs, endMs,
+    date: TODAY, wordIdx, guessedPerWord, hintsRevealed, status, started, elapsedMs, endMs,
   }));
 }
 function restore() {
@@ -113,8 +109,8 @@ function restore() {
     try { st = JSON.parse(localStorage.getItem(STATE_KEY)); } catch { /* corrupt */ }
   }
   if (!st || st.date !== TODAY) {
-    if (!TEST_DATE && !localStorage.getItem('bh-seen-help')) {
-      localStorage.setItem('bh-seen-help', '1');
+    if (!TEST_DATE && !localStorage.getItem('bh-seen-help-v3')) {
+      localStorage.setItem('bh-seen-help-v3', '1');
       $('helpOverlay').classList.remove('hidden');
     }
     return;
@@ -131,12 +127,14 @@ function restore() {
   for (let i = 0; i < idx; i++) {
     if (!isWon(puzzles[i].answer, clean[i])) return;
   }
+  hintsRevealed = Array.from({ length: RUN_WORDS }, (_, i) =>
+    i <= idx && st.hintsRevealed?.[i] === true);
   guessedPerWord = clean;
   wordIdx = idx;
   started = Boolean(st.started);
   elapsedMs = Number.isFinite(st.elapsedMs) ? st.elapsedMs : 0;
   endMs = Number.isFinite(st.endMs) ? st.endMs : 0;
-  const wrong = totalWrong();
+  const wrong = totalSpent();
   if (wrong < MAX_WRONG) {
     // a save can land between solving a word and the hand-off animation
     while (wordIdx < RUN_WORDS - 1 && isWon(puzzles[wordIdx].answer, guessedNow())) wordIdx++;
@@ -211,15 +209,29 @@ function renderStage() {
 function renderHint() {
   const box = $('hint');
   box.innerHTML = '';
-  const locked = wordIdx === RUN_WORDS - 1 && !hintUnlocked();
-  box.classList.toggle('locked', locked);
-  if (locked) {
-    box.textContent = `🔒 Hint locked — costs ${HINT_LOCK_MISSES} misses`;
+  if (hintsRevealed[wordIdx] || status !== 'playing') {
+    const label = document.createElement('b');
+    label.textContent = 'Clue: ';
+    box.append(label, puzzles[wordIdx].hint);
     return;
   }
-  const b = document.createElement('b');
-  b.textContent = 'Hint: ';
-  box.append(b, puzzles[wordIdx].hint);
+  const button = document.createElement('button');
+  button.className = 'hint-button';
+  button.textContent = lives() > 1 ? 'Reveal clue · costs 1 life' : 'Last life · no clue available';
+  button.disabled = transitioning || !canRevealHint(lives(), hintsRevealed[wordIdx]);
+  button.addEventListener('click', revealHint);
+  box.append(button);
+}
+
+function revealHint() {
+  if (!puzzles || status !== 'playing' || dayRolledOver || transitioning ||
+      !canRevealHint(lives(), hintsRevealed[wordIdx])) return;
+  if (!started) { started = true; lastTick = Date.now(); }
+  hintsRevealed[wordIdx] = true;
+  save();
+  renderHint();
+  renderFigure();
+  renderLives();
 }
 
 function renderSlots(dealIn = false) {
@@ -293,7 +305,7 @@ function renderKeyboard() {
 }
 
 function renderFigure(instant = false) {
-  const wrong = totalWrong();
+  const wrong = totalSpent();
   for (const part of document.querySelectorAll('#figure .part')) {
     const on = Number(part.dataset.part) < wrong;
     if (instant) {
@@ -332,12 +344,12 @@ function guess(ch) {
     void board.offsetWidth;
     board.classList.add('shake');
     renderFigure();
-    renderHint();   // the 3rd total miss unlocks the Stinger hint
+    renderHint();
   }
   renderKeyboard();
   renderLives();
 
-  if (runWrongTotal(answers(), guessedPerWord) >= MAX_WRONG) {
+  if (runLivesSpent(answers(), guessedPerWord, hintsRevealed) >= MAX_WRONG) {
     status = 'lost';
     endMs = elapsedMs;
     renderTimer();
@@ -346,6 +358,7 @@ function guess(ch) {
     renderSlots();        // reveal the current word in chalk-red
     renderKeyboard();
     renderFigure();
+    renderHint();
     setTimeout(() => showResults(true), 1400);
   } else if (isWon(word, guessedNow())) {
     if (wordIdx === RUN_WORDS - 1) {
@@ -354,6 +367,8 @@ function guess(ch) {
       renderTimer();
       recordStats();
       save();
+      renderKeyboard();
+      renderHint();
       celebrate();
       setTimeout(() => showResults(true), 1700);
     } else {
@@ -369,6 +384,7 @@ function advanceWord() {
   transitioning = true;
   save();                // the solved word is safe even if the tab dies mid-hand-off
   renderKeyboard();      // freeze the keys during the hand-off
+  renderHint();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const slots = [...$('slots').querySelectorAll('.slot:not(.pre)')];
   slots.forEach((slot, i) => {
@@ -391,6 +407,7 @@ function advanceWord() {
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target instanceof HTMLInputElement) return;
+  if (document.querySelector('.overlay:not(.hidden)')) return;
   const ch = e.key.toUpperCase();
   if (/^[A-Z]$/.test(ch)) guess(ch);
 });
@@ -414,7 +431,7 @@ function celebrate() {
 
 // ------------------------------------------------------------ stats + streak
 // dist[i] counts wins that kept (MAX_WRONG − i) lives — i.e. i total
-// misses across the whole run. Same semantics as before: lives left on wins.
+// lives spent on misses and clues across the whole run. Same semantics as before: lives left on wins.
 const STATS_KEY = 'bh-stats';
 function loadStats() {
   const blank = { played: 0, wins: 0, cur: 0, max: 0, lastPlay: '', lastWin: '',
@@ -434,7 +451,7 @@ function recordStats() {
   s.played++;
   if (status === 'won') {
     s.wins++;
-    s.dist[totalWrong()]++;
+    s.dist[totalSpent()]++;
     s.cur = (s.lastWin && daysBetween(s.lastWin, TODAY) === 1) ? s.cur + 1 : 1;
     s.max = Math.max(s.max, s.cur);
     s.lastWin = TODAY;
@@ -456,7 +473,7 @@ function renderStats() {
   s.dist.forEach((n, i) => {
     const row = document.createElement('div');
     row.className = 'dist-row';
-    const hl = status === 'won' && !TEST_DATE && totalWrong() === i && s.lastPlay === TODAY;
+    const hl = status === 'won' && !TEST_DATE && totalSpent() === i && s.lastPlay === TODAY;
     row.innerHTML = `<span class="n">❤️×${MAX_WRONG - i}</span><span class="bar${hl ? ' hl' : ''}"></span>`;
     const bar = row.querySelector('.bar');
     bar.style.width = `${Math.max(10, (n / maxD) * 100)}%`;
@@ -495,7 +512,7 @@ function showResults(fresh) {
   updateLeaderboard(fresh);
 }
 
-// the day's three answers, each with its whyLocal (or the Stinger's hint)
+// The day's three answers with their definitions.
 function renderRecap() {
   const box = $('recapList');
   box.innerHTML = '';
@@ -510,7 +527,7 @@ function renderRecap() {
     tag.textContent = STAGE_NAMES[i];
     head.appendChild(tag);
     const text = document.createElement('p');
-    text.textContent = p.whyLocal || p.hint;
+    text.textContent = p.hint;
     row.append(head, text);
     box.appendChild(row);
   });
@@ -564,7 +581,7 @@ const lbForm = $('lbForm'), lbNameInput = $('lbNameInput');
 const lbThisBtn = $('lbThisBtn'), lbLastBtn = $('lbLastBtn'), lbRenameBtn = $('lbRenameBtn');
 let lbMonthOffset = 0;
 
-if (lbEnabled()) {
+if (!TEST_DATE && lbEnabled()) {
   lbBox.classList.remove('hidden');
   lbThisBtn.textContent = monthLabel(0);
   lbLastBtn.textContent = monthLabel(-1);
@@ -602,6 +619,7 @@ async function submitForCurrentPage(points) {
 }
 
 function retryPendingSubmit() {
+  if (TEST_DATE) return Promise.resolve();
   if (pendingRetry) return pendingRetry;
   pendingRetry = (async () => {
     const pending = readPendingSubmit();
@@ -626,7 +644,7 @@ function retryPendingSubmit() {
 }
 
 async function updateLeaderboard(fresh) {
-  if (!lbEnabled()) return;
+  if (TEST_DATE || !lbEnabled()) return;
   const points = status === 'won' ? resultToPoints(lives(), endMs) : 0;
   const shouldSubmit = !TEST_DATE && fresh && status === 'won' && points > 0 &&
     localStorage.getItem(SUBMIT_KEY) !== TODAY;
@@ -675,6 +693,7 @@ async function renderBoard() {
 }
 
 $('lbSaveBtn').addEventListener('click', async () => {
+  if (TEST_DATE) return;
   const name = lbNameInput.value.trim();
   if (!name) { lbNameInput.focus(); return; }
   const pending = Number(lbForm.dataset.pendingScore || 0);
